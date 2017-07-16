@@ -107,8 +107,6 @@ from txjsonrpc.web import jsonrpc
 from armoryengine.ALL import *
 from armoryengine.Decorators import EmailOutput, catchErrsForJSON
 from armoryengine.PyBtcWalletRecovery import *
-from jasvet import readSigBlock, verifySignature
-
 
 # Some non-twisted json imports from jgarzik's code and his UniversalEncoder
 class UniversalEncoder(json.JSONEncoder):
@@ -252,10 +250,6 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       # we'll set everything up here.
       self.addrByte = addrByte
 
-      # connection to bitcoind
-      self.NetworkingFactory = None
-
-
    #############################################################################
    @catchErrsForJSON
    def jsonrpc_getreceivedfromsigner(self, *sigBlock):
@@ -322,15 +316,12 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
          raise IncompleteTransaction, "transaction needs more signatures"
 
       pytx = txObj.getSignedPyTx()
-      newTxHash = pytx.getHash()
 
-      def sendGetDataMsg():
-         msg = PyMessage('getdata')
-         msg.payload.invList.append( [MSG_INV_TX, newTxHash] )
-         self.NetworkingFactory.sendMessage(msg)
-
-      self.NetworkingFactory.sendTx(pytx)
-      reactor.callLater(3, sendGetDataMsg)
+      try:
+         TheBDM.bdv().broadcastZC(pytx.serialize())
+      except:
+         LOGERROR("failed to broadcast tx %s" % pytx.getHashHex(BIGENDIAN))
+         return "failed to broadcast tx"
 
       return pytx.getHashHex(BIGENDIAN)
 
@@ -2762,7 +2753,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       A hex string of the raw transaction data to be transmitted.
       """
 
-      return jsonrpc_gethextxtobroadcastraw(self.readFile(txASCIIFile))
+      return self.jsonrpc_gethextxtobroadcastraw(self.readFile(txASCIIFile))
 
    #############################################################################
    # Pull in a signed Tx and get the raw Tx hex data to broadcast. This call
@@ -3029,7 +3020,8 @@ class Armory_Daemon(object):
          sys.exit()
       else:
          # Make sure we're actually able to do something before proceeding.
-         if onlineModeIsPossible(TheBDM.btcdir):
+         if Cpp.BlockDataManagerConfig_testConnection(\
+               ARMORYDB_IP, armoryengine.ArmoryUtils.ARMORYDB_PORT):
             self.lock = threading.Lock()
             self.lastChecked = None
 
@@ -3090,16 +3082,6 @@ class Armory_Daemon(object):
                   # Set the current LB to the 1st wallet in the set. (The choice
                   # is arbitrary.)
                   self.curLB = self.lboxMap[self.lboxMap.keys()[0]]
-
-                  # Create the CPP wallet map for each lockbox.
-                  for lbID,lbox in self.lboxMap.iteritems():
-                     scraddrReg = script_to_scrAddr(lbox.binScript)
-                     scraddrP2SH = script_to_scrAddr(script_to_p2sh_script(lbox.binScript))
-                     lockboxScrAddr = [scraddrReg, scraddrP2SH]
-
-                     LOGWARN('Registering lockbox: %s' % lbID)
-                     self.lboxCppWalletMap[lbID] = \
-                      TheBDM.registerLockbox(lbID, lockboxScrAddr)
 
                else:
                   LOGWARN('No lockboxes were loaded.')
@@ -3162,43 +3144,44 @@ class Armory_Daemon(object):
             # Setup the heartbeat function to run every
             reactor.callLater(3, self.Heartbeat)
          else:
-            errStr = 'armoryd is not ready to run! Please check to see if ' \
-                     'bitcoind is running and the Blockchain files ' \
-                     '(blk*.dat) are available.'
+            errStr = 'could not find instance of armorydb at %s:%s' \
+               % (ARMORYDB_IP, armoryengine.ArmoryUtils.ARMORYDB_PORT)
+                     
             LOGERROR(errStr)
             os._exit(0)
 
+   #############################################################################
+   def updateWalletData(self):
+      for wltid in self.WltMap:
+         self.WltMap[wltid].getBalancesAndCountFromDB()
+         self.WltMap[wltid].getAddrDataFromDB()
+         
+      for lbid in self.lboxMap:
+         self.lboxMap[lbid].getBalancesAndCountFromDB(\
+            TheBDM.getTopBlockHeight(), IGNOREZC)
+         
    #############################################################################
    def handleCppNotification(self, action, args):
 
       if action == FINISH_LOAD_BLOCKCHAIN_ACTION:
          #Blockchain just finished loading, finish initializing UI and render the
          #ledgers
+         
+         self.updateWalletData()
+         for wltid in self.WltMap:
+            self.WltMap[wltid].detectHighestUsedIndex()
 
-         self.timeReceived = TheBDM.bdv().blockchain().top().getTimestamp()
-         self.latestBlockNum = TheBDM.bdv().blockchain().top().getBlockHeight()
+         self.latestBlockNum = TheBDM.getTopBlockHeight()
          LOGINFO('Blockchain loaded. Wallets synced!')
          LOGINFO('Current block number: %d', self.latestBlockNum)
-         LOGINFO('Current block received at: %d', self.timeReceived)
 
          LOGINFO('Wallet balance: %s' % \
                  coin2str(self.curWlt.getBalance('Spendable')))
 
-         # This is CONNECT call for armoryd to talk to bitcoind
-         LOGINFO('Set up connection to bitcoind')
-         self.NetworkingFactory = ArmoryClientFactory( \
-                        TheBDM,
-                        func_loseConnect = self.showOfflineMsg, \
-                        func_madeConnect = self.showOnlineMsg, \
-                        func_newTx       = self.execOnNewTx, \
-                        func_newBlock    = self.execOnNewBlock)
-
-         reactor.connectTCP('127.0.0.1', BITCOIN_PORT, self.NetworkingFactory)
-         # give access to the networking factory from json-rpc listener
-         self.resource.NetworkingFactory = self.NetworkingFactory
-
       elif action == NEW_ZC_ACTION:
          # for zero-confirmation transcations, do nothing for now.
+         self.updateWalletData()
+         
          print 'New ZC'
          for le in args:
             wltID = le.getWalletID()
@@ -3211,6 +3194,8 @@ class Armory_Daemon(object):
          #A new block has appeared, pull updated ledgers from the BDM, display
          #the new block height in the status bar and note the block received time
 
+         self.updateWalletData()
+         
          newBlocks = args[0]
          if newBlocks>0:
             LOGINFO('New Block! : %d', TheBDM.getTopBlockHeight())
@@ -3219,31 +3204,13 @@ class Armory_Daemon(object):
             self.writeSetting('LastBlkRecvTime', self.blkReceived)
             self.writeSetting('LastBlkRecv',     TheBDM.getTopBlockHeight())
 
-            # If there are no new block functions to run, just skip all this.
-            if len(self.newBlockFunctions) > 0:
-               # Here's where we actually execute the new-block calls, because
-               # this code is guaranteed to execute AFTER the TheBDM has processed
-               # the new block data.
-               # We walk through headers by block height in case the new block
-               # didn't extend the main chain (this won't run), or there was a
-               # reorg with multiple blocks and we only want to process the new
-               # blocks on the main chain, not the invalid ones
-               prevTopBlock = TheBDM.getTopBlockHeight() - newBlocks
-               for blknum in range(newBlocks):
-                  cppHeader = TheBDM.bdv().getHeaderByHeight(prevTopBlock + blknum)
-                  pyHeader = PyBlockHeader().unserialize(cppHeader.serialize())
-
-                  cppBlock = TheBDM.bdv().getMainBlockFromDB(blknum)
-                  pyTxList = [PyTx().unserialize(cppBlock.getSerializedTx(i)) for
-                                 i in range(cppBlock.getNumTx())]
-                  for funcKey in self.newBlockFunctions:
-                     for blockFunc in self.newBlockFunctions[funcKey]:
-                        blockFunc(pyHeader, pyTxList)
-
       elif action == REFRESH_ACTION:
          #The wallet ledgers have been updated from an event outside of new ZC
          #or new blocks (usually a wallet or address was imported, or the
          #wallet filter was modified
+         
+         self.updateWalletData()
+         
          for wltID in args:
             if len(wltID) > 0:
                if wltID in self.WltMap:
@@ -3251,11 +3218,8 @@ class Armory_Daemon(object):
                   self.WltMap[wltID].isEnabled = True
                else:
                   if wltID not in self.lboxMap:
-                     raise RuntimeError("cpp says %s exists, but armoryd can't find it" % wltId)
+                     raise RuntimeError("cpp says %s exists, but armoryd can't find it" % wltID)
                   self.lboxMap[wltID].isEnabled = True
-
-               #no progress repoting in armoryd yet
-               #del self.walletSideScanProgress[wltID]
 
       elif action == 'progress':
          #Received progress data for a wallet side scan
@@ -3267,6 +3231,16 @@ class Armory_Daemon(object):
          #it to the user
          LOGWARN("BockDataManager Warning: ")
          LOGWARN(args[0])
+         
+      elif action == BDV_ERROR:
+         errorStruct = args[0]
+         
+         if errorStruct.errType_ == Cpp.Error_ZC:
+            errorMsg = errorStruct.errorStr_
+            txHash = errorStruct.extraMsg_
+
+            LOGERROR("failed to broadcast tx %s" % txHash)
+            LOGERROR("error message: %s" % errorMsg)
 
 
    #############################################################################
@@ -3293,6 +3267,51 @@ class Armory_Daemon(object):
       wrapper = wrapResource(resource, [checker], realmName=realmName)
       return wrapper
 
+   #############################################################################
+   def loadCppWallets(self):   
+      #check python wallets against cpp wallets
+      from armoryengine.CppWalletMirroring import WalletMirroringClass
+      wltCmpObj = WalletMirroringClass(self.WltMap, self.walletManager)
+      wltCmpObj.checkWallets()   
+         
+      #load all cpp wallets
+      for wltID in self.WltMap:
+         wlt = self.WltMap[wltID]
+         wlt.cppWallet = self.walletManager.getCppWallet(wltID)
+         
+   #############################################################################
+   def setupBDV(self):
+      if TheBDM.getState() == BDM_OFFLINE:
+         return
+
+      try:
+         TheBDM.instantiateBDV(armoryengine.ArmoryUtils.ARMORYDB_PORT)         
+         TheBDM.registerBDV()
+         self.walletManager = Cpp.WalletManager(str(ARMORY_HOME_DIR))
+         self.walletManager.setBDVObject(TheBDM.bdv())
+      except:
+         TheBDM.setState(BDM_OFFLINE)
+         return
+      
+      self.loadCppWallets()
+
+      for wltId in self.WltMap:
+         LOGWARN('Registering wallet: %s' % wltId)
+         self.WltMap[wltId].registerWallet()
+
+      for lbObj in self.lboxMap:
+         lbID = lbObj.uniqueIDB58
+         LOGWARN('Registering lockbox: %s' % lbID)
+         
+         scraddrReg = script_to_scrAddr(lbObj.binScript)
+         scraddrP2SH = script_to_scrAddr(script_to_p2sh_script(lbObj.binScript))
+         scrAddrList = []
+         scrAddrList.append(scraddrReg)
+         scrAddrList.append(scraddrP2SH)
+
+         self.cppLockboxWltMap[lbID] = lbObj.registerLockbox(scrAddrList, False)
+      
+   #############################################################################
    def start(self):
       #run a wallet consistency check before starting the BDM
       self.checkWallet()
@@ -3300,6 +3319,9 @@ class Armory_Daemon(object):
       #try to grab checkWallet lock to block start() until the check is over
       self.lock.acquire()
       self.lock.release()
+
+      #registerBDV
+      self.setupBDV()
 
       #register callback
       TheBDM.registerCppNotification(self.handleCppNotification)
@@ -3309,11 +3331,7 @@ class Armory_Daemon(object):
       # its own thread.
       LOGWARN('Server started...')
 
-      # Put the BDM in online mode only after registering all Python wallets.
-      for wltID, wlt in self.WltMap.iteritems():
-         LOGWARN('Registering wallet: %s' % wltID)
-         wlt.registerWallet()
-      if not CLI_OPTIONS.offline:
+      if not CLI_OPTIONS.offline and TheBDM.getState() != BDM_OFFLINE:
          TheBDM.goOnline()
       reactor.run()
 
