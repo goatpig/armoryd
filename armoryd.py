@@ -3156,8 +3156,8 @@ class Armory_Daemon(object):
          self.WltMap[wltid].getBalancesAndCountFromDB()
          self.WltMap[wltid].getAddrDataFromDB()
          
-      for lbid in self.lboxMap:
-         self.lboxMap[lbid].getBalancesAndCountFromDB(\
+      for lbid in self.lboxCppWalletMap:
+         self.lboxCppWalletMap[lbid].getBalancesAndCountFromDB(\
             TheBDM.getTopBlockHeight(), IGNOREZC)
          
    #############################################################################
@@ -3299,8 +3299,8 @@ class Armory_Daemon(object):
          LOGWARN('Registering wallet: %s' % wltId)
          self.WltMap[wltId].registerWallet()
 
-      for lbObj in self.lboxMap:
-         lbID = lbObj.uniqueIDB58
+      for lbID in self.lboxMap:
+         lbObj = self.lboxMap[lbID]
          LOGWARN('Registering lockbox: %s' % lbID)
          
          scraddrReg = script_to_scrAddr(lbObj.binScript)
@@ -3309,7 +3309,7 @@ class Armory_Daemon(object):
          scrAddrList.append(scraddrReg)
          scrAddrList.append(scraddrP2SH)
 
-         self.cppLockboxWltMap[lbID] = lbObj.registerLockbox(scrAddrList, False)
+         self.lboxCppWalletMap[lbID] = lbObj.registerLockbox(scrAddrList, False)
       
    #############################################################################
    def start(self):
