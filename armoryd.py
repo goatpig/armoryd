@@ -3160,6 +3160,10 @@ class Armory_Daemon(object):
             TheBDM.getTopBlockHeight(), IGNOREZC)
          
    #############################################################################
+   def signalHandleCppNotification(self, action, args):
+      reactor.callFromThread(self.handleCppNotification, action, args)
+   
+   #############################################################################
    def handleCppNotification(self, action, args):
 
       if action == FINISH_LOAD_BLOCKCHAIN_ACTION:
@@ -3326,7 +3330,7 @@ class Armory_Daemon(object):
       self.setupBDV()
 
       #register callback
-      TheBDM.registerCppNotification(self.handleCppNotification)
+      TheBDM.registerCppNotification(self.signalHandleCppNotification)
 
       # This is not a UI so no need to worry about the main thread being
       # blocked. Any UI that uses this Daemon can put the call to the Daemon on
