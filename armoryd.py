@@ -1057,7 +1057,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
             balance = cppWallet.getFullBalance()
          else:
             topBlk = TheBDM.getTopBlockHeight()
-            balance = cppWallet.getSpendableBalance(topBlk - int(minconf), IGNOREZC)
+            balance = cppWallet.getSpendableBalance()
       else:
          raise NetworkIDError('Addr for the wrong network!')
 
@@ -1944,8 +1944,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       else:
          lbox = self.serverLBMap[spendFromLboxID]
          cppWlt = self.serverLBCppWalletMap[spendFromLboxID]
-         topBlk = TheBDM.getTopBlockHeight()
-         spendBal = cppWlt.getSpendableBalance(topBlk, IGNOREZC)
+         spendBal = cppWlt.getSpendableBalance()
          cppUtxoList = cppWlt.getSpendableTxOutListForValue(totalSend)
          utxoList = map(lambda tx: PyUnspentTxOut().createFromCppUtxo(tx), cppUtxoList)
 
@@ -3310,6 +3309,9 @@ class Armory_Daemon(object):
          scrAddrList.append(scraddrP2SH)
 
          self.lboxCppWalletMap[lbID] = lbObj.registerLockbox(scrAddrList, False)
+         
+      if len(self.lboxMap) > 0:
+         LOGINFO("registered %d lockboxes" % len(self.lboxMap))
       
    #############################################################################
    def start(self):
