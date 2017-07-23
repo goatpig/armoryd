@@ -610,7 +610,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
 
       # Make sure the key is one we can support
       try:
-         self.binPrivKey, self.privKeyType = parsePrivateKeyData(privKey)
+         binPrivKey, privKeyType = parsePrivateKeyData(privKey)
       except:
          (errType, errVal) = sys.exc_info()[:2]
          LOGEXCEPT('Error parsing incoming private key.')
@@ -622,9 +622,10 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
 
       if privKeyValid:
          self.curWlt.isEnabled = False
-         self.thePubKey = self.curWlt.importExternalAddressData(self.binPrivKey)
-         if self.thePubKey != None:
-            retDict['PubKey'] = binary_to_hex(self.thePubKey)
+         thePubKey = self.curWlt.importExternalAddressData(\
+            privKey=SecureBinaryData(binPrivKey))
+         if thePubKey != None:
+            retDict['PubKey'] = thePubKey.toHexStr()
          else:
             LOGERROR('Attempt to import a private key failed.')
             retDict['Error'] = 'Attempt to import your private key failed. ' \
