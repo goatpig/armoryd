@@ -107,6 +107,7 @@ from txjsonrpc.web import jsonrpc
 from armoryengine.ALL import *
 from armoryengine.Decorators import EmailOutput, catchErrsForJSON
 from armoryengine.PyBtcWalletRecovery import *
+from armoryengine.Block import PyBlockHeader
 
 # Some non-twisted json imports from jgarzik's code and his UniversalEncoder
 class UniversalEncoder(json.JSONEncoder):
@@ -1275,7 +1276,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
          ledgerEntries = []
          try:
             while sz < from_tx + tx_count:
-               ledgerVector = ledgerWlt.getHistoryPageAsVector(pageId)
+               ledgerVector = ledgerWlt.getHistoryPage(pageId)
                for entry in reversed(ledgerVector):
                   ledgerEntries.append(entry)
 
@@ -1301,20 +1302,22 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
                LOGERROR('Tx hash not recognized by TheBDM: %s' % txHashHex)
 
             try:
-               cppHead = TheBDM.bdv().getHeaderPtrForTx(cppTx)
+               rawHeader = TheBDM.bdv().getRawHeaderForTxHash(txHashBin)
             except:
-               cppHead = None
-
-            if cppHead is None or not cppHead.isInitialized():
+               rawHeader = None
+               
+            if rawHeader == None or len(rawHeader) == 0:
                LOGERROR('Header pointer is not available! Probably trying'
                         ' to get a block header for a ZC.')
                headHashBin = ''
                headHashHex = ''
                headtime    = 0
             else:
-               headHashBin = cppHead.getThisHash()
+               pyHeader = PyBlockHeader()
+               pyHeader.unserialize(rawHeader)
+               headHashBin = pyHeader.getHash()
                headHashHex = binary_to_hex(headHashBin, BIGENDIAN)
-               headtime    = cppHead.getTimestamp()
+               headtime    = pyHeader.timestamp
 
             # Get some more data.
             # amtCoins: amt of BTC transacted, always positive (how big are
@@ -1347,7 +1350,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
                # Outgoing transaction (process in reverse order so get first)
                amtCoins = -1*(netCoins+feeCoins)
                for recipScrAddr in scrAddrs[::-1]:
-                  if ledgerWlt.hasScrAddress(recipScrAddr):
+                  if ledgerWlt.hasScrAddr(recipScrAddr):
                      changeScrAddr = recipScrAddr
                   else:
                      firstScrAddr = recipScrAddr
@@ -1355,7 +1358,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
                # Incoming transaction (process in reverse order so get first)
                amtCoins = netCoins
                for recipScrAddr in scrAddrs[::-1]:
-                  if ledgerWlt.hasScrAddress(recipScrAddr):
+                  if ledgerWlt.hasScrAddr(recipScrAddr):
                      firstScrAddr = recipScrAddr
                   else:
                      changeScrAddr = recipScrAddr
@@ -1382,7 +1385,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
                try:
                   sender = TheBDM.bdv().getSenderScrAddr(cppTx.getTxInCopy(iin))
                   val    = TheBDM.bdv().getSentValue(cppTx.getTxInCopy(iin))
-                  addTo  = (myinputs if ledgerWlt.hasScrAddress(sender) else \
+                  addTo  = (myinputs if ledgerWlt.hasScrAddr(sender) else \
                             otherinputs)
                   addTo.append( {'address': scrAddr_to_displayStr(sender, \
                                                                self.serverWltMap, \
@@ -1398,7 +1401,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
             for iout in range(cppTx.getNumTxOut()):
                recip = cppTx.getTxOutCopy(iout).getScrAddressStr()
                val   = cppTx.getTxOutCopy(iout).getValue();
-               addTo = (myoutputs if ledgerWlt.hasScrAddress(recip) else \
+               addTo = (myoutputs if ledgerWlt.hasScrAddr(recip) else \
                         otheroutputs)
                addTo.append( {'address': scrAddr_to_displayStr(recip, \
                                                             self.serverWltMap, \
