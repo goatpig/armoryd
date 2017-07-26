@@ -1984,11 +1984,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
 
       # Generate and shuffle the recipient list.
       outputPairs = scriptValuePairs[:]
-      if lbox:
-         p2shMap = {binary_to_hex(script_to_scrAddr(script_to_p2sh_script(
-            lbox.binScript))) : lbox.binScript}
-      else:
-         p2shMap = {}
+
       if totalChange > 0:
          if spendFromLboxID is None:
             nextAddrObj = self.curWlt.getNextUnusedAddress()
@@ -2003,32 +1999,37 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       # If this has nothing to do with lockboxes, we need to make sure
       # we're providing a key map for the inputs.
       pubKeyMap = {}
-      for utxo in utxoSelect:
-         scrType = Cpp.BtcUtils().getTxOutScriptTypeInt(utxo.getScript())
-         scrAddr = utxo.getRecipientScrAddr()
-         if scrType in CPP_TXOUT_STDSINGLESIG:
-            a160 = scrAddr_to_hash160(scrAddr)[1]
-            addrObj = self.curWlt.getAddrByHash160(a160)
-            if addrObj:
-               pubKeyMap[scrAddr] = addrObj.binPublicKey65.toBinStr()
-         elif scrType == CPP_TXOUT_P2SH:
-            p2shScript = self.curWlt.cppWallet.getP2SHScriptForHash(utxo.getScript())
-            p2shKey = binary_to_hex(script_to_scrAddr(script_to_p2sh_script(
-                                                      p2shScript)))
-            p2shMap[p2shKey]  = p2shScript  
-               
-            addrIndex = self.curWlt.cppWallet.getAssetIndexForAddr(utxo.getRecipientHash160())
-            try:
-               addrStr = self.curWlt.chainIndexMap[addrIndex]
-            except:
-               if addrIndex < -2:
-                  importIndex = self.curWlt.cppWallet.convertToImportIndex(addrIndex)
-                  addrStr = self.curWlt.linearAddr160List[importIndex]
-               else:
-                  raise Exception("invalid address index")
+      p2shMap = {}
+      if lbox:
+         p2shMap = {binary_to_hex(script_to_scrAddr(script_to_p2sh_script(
+            lbox.binScript))) : lbox.binScript}
+      else:
+         for utxo in utxoSelect:
+            scrType = Cpp.BtcUtils().getTxOutScriptTypeInt(utxo.getScript())
+            scrAddr = utxo.getRecipientScrAddr()
+            if scrType in CPP_TXOUT_STDSINGLESIG:
+               a160 = scrAddr_to_hash160(scrAddr)[1]
+               addrObj = self.curWlt.getAddrByHash160(a160)
+               if addrObj:
+                  pubKeyMap[scrAddr] = addrObj.binPublicKey65.toBinStr()
+            elif scrType == CPP_TXOUT_P2SH:
+               p2shScript = self.curWlt.cppWallet.getP2SHScriptForHash(utxo.getScript())
+               p2shKey = binary_to_hex(script_to_scrAddr(script_to_p2sh_script(
+                                                         p2shScript)))
+               p2shMap[p2shKey]  = p2shScript  
                   
-            addrObj = self.curWlt.addrMap[addrStr]
-            pubKeyMap[scrAddr] = addrObj.binPublicKey65.toBinStr()    
+               addrIndex = self.curWlt.cppWallet.getAssetIndexForAddr(utxo.getRecipientHash160())
+               try:
+                  addrStr = self.curWlt.chainIndexMap[addrIndex]
+               except:
+                  if addrIndex < -2:
+                     importIndex = self.curWlt.cppWallet.convertToImportIndex(addrIndex)
+                     addrStr = self.curWlt.linearAddr160List[importIndex]
+                  else:
+                     raise Exception("invalid address index")
+                     
+               addrObj = self.curWlt.addrMap[addrStr]
+               pubKeyMap[scrAddr] = addrObj.binPublicKey65.toBinStr()    
 
       # Create an unsigned transaction and return the ASCII version.
       usTx = UnsignedTransaction().createFromTxOutSelection(utxoSelect, \
