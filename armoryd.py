@@ -1991,7 +1991,8 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
          p2shMap = {}
       if totalChange > 0:
          if spendFromLboxID is None:
-            nextAddr = self.curWlt.getNextUnusedAddress().getAddrStr()
+            nextAddrObj = self.curWlt.getNextUnusedAddress()
+            nextAddr = self.curWlt.getP2PKHAddrForIndex(nextAddrObj.chainIndex)
             ustxScr = getScriptForUserString(nextAddr, self.serverWltMap, \
                                              self.convLBDictToList())
             outputPairs.append( [ustxScr['Script'], totalChange] )
@@ -2003,13 +2004,31 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       # we're providing a key map for the inputs.
       pubKeyMap = {}
       for utxo in utxoSelect:
-         scrType = getTxOutScriptType(utxo.getScript())
+         scrType = Cpp.BtcUtils().getTxOutScriptTypeInt(utxo.getScript())
+         scrAddr = utxo.getRecipientScrAddr()
          if scrType in CPP_TXOUT_STDSINGLESIG:
-            scrAddr = utxo.getRecipientScrAddr()
             a160 = scrAddr_to_hash160(scrAddr)[1]
             addrObj = self.curWlt.getAddrByHash160(a160)
             if addrObj:
                pubKeyMap[scrAddr] = addrObj.binPublicKey65.toBinStr()
+         elif scrType == CPP_TXOUT_P2SH:
+            p2shScript = self.curWlt.cppWallet.getP2SHScriptForHash(utxo.getScript())
+            p2shKey = binary_to_hex(script_to_scrAddr(script_to_p2sh_script(
+                                                      p2shScript)))
+            p2shMap[p2shKey]  = p2shScript  
+               
+            addrIndex = self.curWlt.cppWallet.getAssetIndexForAddr(utxo.getRecipientHash160())
+            try:
+               addrStr = self.curWlt.chainIndexMap[addrIndex]
+            except:
+               if addrIndex < -2:
+                  importIndex = self.curWlt.cppWallet.convertToImportIndex(addrIndex)
+                  addrStr = self.curWlt.linearAddr160List[importIndex]
+               else:
+                  raise Exception("invalid address index")
+                  
+            addrObj = self.curWlt.addrMap[addrStr]
+            pubKeyMap[scrAddr] = addrObj.binPublicKey65.toBinStr()    
 
       # Create an unsigned transaction and return the ASCII version.
       usTx = UnsignedTransaction().createFromTxOutSelection(utxoSelect, \
@@ -2076,6 +2095,57 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
          return ustxObj.toJSONMap()
 
       return
+   
+   #############################################################################
+   # Take the ASCII representation of a Tx and add an OP_RETURN output to the tx
+   @catchErrsForJSON
+   def jsonrpc_addopreturn(self, txASCII, message):
+      """
+      DESCRIPTION:
+      Add OP_RETURN output to unsigned transaction. The output value is forced
+      to 0
+      PARAMETERS:
+      txASCII - A transaction in ASCII-armored form.
+      Message to add to the op_return output. Can be empty
+      RETURN:
+      A dict with these 2 possible keys:
+         Tx: a transaction in ASCII-armored form.
+         Error: an error string
+      """
+
+      ustxObj = None
+      ustxReadable = False
+      allData = ''
+      
+      result = {}
+
+      # Try to decipher the Tx.
+      try:
+         ustxObj = UnsignedTransaction().unserializeAscii(txASCII)
+      except BadAddressError:
+         result['Error'] = 'This transaction contains inconsistent information. This ' \
+                  'is probably not your fault...'
+         ustxObj = None
+      except NetworkIDError:
+         result['Error'] = 'This transaction is actually for a different network! Did' \
+                  'you load the correct transaction?'
+         ustxObj = None
+      except (UnserializeError, IndexError, ValueError):
+         result['Error'] = 'This transaction can\'t be read.'
+         ustxObj = None
+
+      if ustxObj == None:
+         return result
+      
+      if ustxObj.evaluateSigningStatus().canBroadcast == True: 
+         result['Error'] = 'This transaction is already signed! Cannot amend a ' \
+            'signed transaction'
+         return result
+      
+      ustxObj.addOpReturnOutput(message)
+      result['Tx'] = ustxObj.serializeAscii()
+            
+      return result
 
    #############################################################################
    # Take the path of the ASCII representation of an unsigned Tx and sign it.
@@ -2164,7 +2234,6 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       for ustxi in ustx.ustxInputs:
 
          displayInfo = getDisplayStringForScript(ustxi.txoScript, self.serverWltMap, self.serverLBMap.values(), 60, 2)
-         scriptType = None
          if displayInfo['WltID'] is not None:
             if displayInfo['WltID'] == self.curWlt.uniqueIDB58:
                if self.curWlt.useEncryption and self.curWlt.isLocked:
