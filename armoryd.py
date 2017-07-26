@@ -2106,7 +2106,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       to 0
       PARAMETERS:
       txASCII - A transaction in ASCII-armored form.
-      Message to add to the op_return output. Can be empty
+      message - Message to add to the op_return output. Can be empty
       RETURN:
       A dict with these 2 possible keys:
          Tx: a transaction in ASCII-armored form.
