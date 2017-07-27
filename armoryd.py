@@ -2107,7 +2107,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       to 0
       PARAMETERS:
       txASCII - A transaction in ASCII-armored form.
-      message - Message to add to the op_return output. Can be empty
+      message - Message (as string) to add to the op_return output. Can be empty
       RETURN:
       A dict with these 2 possible keys:
          Tx: a transaction in ASCII-armored form.
@@ -2143,7 +2143,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
             'signed transaction'
          return result
       
-      ustxObj.addOpReturnOutput(message)
+      ustxObj.addOpReturnOutput(str(message))
       result['Tx'] = ustxObj.serializeAscii()
             
       return result
