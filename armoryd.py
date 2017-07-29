@@ -2137,15 +2137,15 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
 
       if ustxObj == None:
          return result
-      
-      if ustxObj.evaluateSigningStatus().canBroadcast == True: 
-         result['Error'] = 'This transaction is already signed! Cannot amend a ' \
-            'signed transaction'
+            
+      try:
+         ustxObj.addOpReturnOutput(str(message))
+      except:
+         result['Error'] = 'This transaction already has signatures. Cannot amend a ' \
+            'signed transaction!'
          return result
       
-      ustxObj.addOpReturnOutput(str(message))
       result['Tx'] = ustxObj.serializeAscii()
-            
       return result
 
    #############################################################################
