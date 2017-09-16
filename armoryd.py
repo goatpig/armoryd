@@ -226,6 +226,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       self.addressMetaData = {}
       self.curWlt = wallet
       self.curLB = lockbox
+      self.signerType = SIGNER_DEFAULT
 
       # Dicts, sets and lists (and other container types?), if used as a default
       # argument, actually become references and subsequent calls to __init__
@@ -2001,8 +2002,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       pubKeyMap = {}
       p2shMap = {}
       if lbox:
-         p2shMap = {binary_to_hex(script_to_scrAddr(script_to_p2sh_script(
-            lbox.binScript))) : lbox.binScript}
+         p2shMap = lbox.getScriptDict()
       else:
          for utxo in utxoSelect:
             scrType = Cpp.BtcUtils().getTxOutScriptTypeInt(utxo.getScript())
@@ -2147,6 +2147,35 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       
       result['Tx'] = ustxObj.serializeAscii()
       return result
+   
+   #############################################################################
+   # Set signer type for following signing operations. Type will remain until
+   # changed manually.
+   @catchErrsForJSON
+   def jsonrpc_setsignertype(self, signerType):
+      """
+      DESCRIPTION:
+      Set signer type to sign transactions with for the current instance. Signer 
+      types are:
+      - 'Default'
+      - 'Bcash'
+      
+      Resets to 'Default' on a new start. 'Default' determines the appropriate 
+      signer code for legacy and segwit transactions. 'Default' logic cannot
+      select the Bcash signer, you have to pick Bcash manually. 
+      
+      Once set, a signer type will remain for the life of the process, unless 
+      changed manually.
+      
+      PARAMETERS:
+      signerType - a signer type as text, either 'Default' or 'Bcash'
+      RETURN:
+      Current active signer type.
+      """
+
+      if signerType == SIGNER_DEFAULT or signerType == SIGNER_BCH:
+         self.signerType = signerType
+      return self.signerType
 
    #############################################################################
    # Take the path of the ASCII representation of an unsigned Tx and sign it.
@@ -2241,7 +2270,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
                   raise WalletUnlockNeeded, "You need to unlock this wallet before you can sign this transaction"
                a160 = CheckHash160(ustxi.scrAddrs[0])
                addrObj = self.curWlt.getAddrByHash160(a160)
-               ustxi.createAndInsertSignature(pytx, addrObj.binPrivKey32_Plain)
+               ustxi.createAndInsertSignature(pytx, addrObj.binPrivKey32_Plain, signerType=self.signerType)
                signed += 1
          elif displayInfo['LboxID'] is not None:
             lockbox = self.serverLBMap.get(displayInfo['LboxID'])
@@ -2251,7 +2280,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
                   if addrObj:
                      if self.curWlt.useEncryption and self.curWlt.isLocked:
                         raise WalletUnlockNeeded, "You need to unlock this wallet before you can sign this transaction"
-                     ustxi.createAndInsertSignature(pytx, addrObj.binPrivKey32_Plain)
+                     ustxi.createAndInsertSignature(pytx, addrObj.binPrivKey32_Plain, signerType=self.signerType)
                      signed += 1
       LOGWARN("Signed transaction %s times" % signed)
       return ustx
