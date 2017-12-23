@@ -314,7 +314,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       txObj = UnsignedTransaction().unserializeAscii(txASCII)
       if not txObj:
          raise InvalidTransaction, "file does not contain a valid tx"
-      if not txObj.verifySigsAllInputs():
+      if not txObj.verifySigsAllInputs(txObj.signerType):
          raise IncompleteTransaction, "transaction needs more signatures"
 
       pytx = txObj.getSignedPyTx()
@@ -2886,7 +2886,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
          ustxObj = UnsignedTransaction().unserializeAscii(txASCII)
          sigStatus = ustxObj.evaluateSigningStatus()
          enoughSigs = sigStatus.canBroadcast
-         sigsValid = ustxObj.verifySigsAllInputs()
+         sigsValid = ustxObj.verifySigsAllInputs(ustxObj.signerType)
          ustxReadable = True
       except BadAddressError:
          LOGERROR('This transaction contains inconsistent information. This ' \
