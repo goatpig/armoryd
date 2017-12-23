@@ -13,7 +13,7 @@ To operate armoryd, copy the following files into the Bitcoin Armory root folder
 
 Or copy the following files from the Bitcoin Armory project into armoryd's root folder:
 
-- CppBlockUtils.py and _CppBlockUtils.pyd/so (results from building BitcoinArmory Windows/*nix)
+- CppBlockUtils.py and _CppBlockUtils.pyd/so (created when building BitcoinArmory in Windows/*nix/macOS)
 - /armoryengine/*.*
 
 ### Dependencies
@@ -24,6 +24,7 @@ Source: https://github.com/goatpig/BitcoinArmory
 * Python Twisted -- asynchronous networking  
  Linux:   Install package `python-twisted`  
  Windows: [Download](https://twistedmatrix.com/trac/wiki/Downloads)  
+ macOS:   See [README_macOS.md](README_macOS.md) for more info.
 
 ## License
 
