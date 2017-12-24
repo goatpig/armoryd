@@ -2174,7 +2174,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       """
 
       if signerType == SIGNER_DEFAULT or signerType == SIGNER_BCH:
-         self.signerType = signerType
+         self.signerType = str(signerType)
       return self.signerType
 
    #############################################################################
@@ -3284,7 +3284,7 @@ class Armory_Daemon(object):
          LOGINFO('Wallet balance: %s' % \
                  coin2str(self.curWlt.getBalance('Spendable')))
 
-      elif action == NEW_ZC_ACTION:
+      elif action == NEW_ZC_ACTION and not IGNOREZC:
          # for zero-confirmation transcations, do nothing for now.
          self.updateWalletData()
          
