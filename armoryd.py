@@ -2173,7 +2173,7 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       Current active signer type.
       """
 
-      if signerType == SIGNER_DEFAULT or signerType == SIGNER_BCH:
+      if signerType in [SIGNER_DEFAULT, SIGNER_CPP, SIGNER_BCH]:
          self.signerType = signerType
       return self.signerType
 
