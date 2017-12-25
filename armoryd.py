@@ -2158,8 +2158,10 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       Set signer type to sign transactions with for the current instance. Signer 
       types are:
       - 'Default'
+      - 'Legacy'
+      - '0.96 C++'
       - 'Bcash'
-      
+
       Resets to 'Default' on a new start. 'Default' determines the appropriate 
       signer code for legacy and segwit transactions. 'Default' logic cannot
       select the Bcash signer, you have to pick Bcash manually. 
@@ -2173,8 +2175,10 @@ class Armory_Json_Rpc_Server(jsonrpc.JSONRPC):
       Current active signer type.
       """
 
-      if signerType in [SIGNER_DEFAULT, SIGNER_CPP, SIGNER_BCH]:
-         self.signerType = signerType
+      if signerType in [SIGNER_DEFAULT, SIGNER_LEGACY, SIGNER_CPP, SIGNER_BCH]:
+         self.signerType = str(signerType)
+      else:
+         raise ValueError('Invalid signer type')
       return self.signerType
 
    #############################################################################
@@ -3284,7 +3288,7 @@ class Armory_Daemon(object):
          LOGINFO('Wallet balance: %s' % \
                  coin2str(self.curWlt.getBalance('Spendable')))
 
-      elif action == NEW_ZC_ACTION:
+      elif action == NEW_ZC_ACTION and not CLI_OPTIONS.ignoreZC:
          # for zero-confirmation transcations, do nothing for now.
          self.updateWalletData()
          
@@ -3423,7 +3427,8 @@ class Armory_Daemon(object):
    #############################################################################
    def start(self):
       #run a wallet consistency check before starting the BDM
-      self.checkWallet()
+      if DO_WALLET_CHECK:
+         self.checkWallet()
 
       #try to grab checkWallet lock to block start() until the check is over
       self.lock.acquire()
@@ -3602,7 +3607,7 @@ class Armory_Daemon(object):
             wlt.checkWalletLockTimeout()
 
          # Check for new blocks in the latest blk0XXXX.dat file.
-         if TheBDM.getState()==BDM_BLOCKCHAIN_READY:
+         if TheBDM.getState()==BDM_BLOCKCHAIN_READY and DO_WALLET_CHECK:
             #check wallet every checkStep seconds
             nextCheck = self.lastChecked + self.checkStep
             if RightNow() >= nextCheck:
