@@ -118,7 +118,6 @@ class UniversalEncoder(json.JSONEncoder):
 
 ARMORYD_CONF_FILE = os.path.join(ARMORY_HOME_DIR, 'armoryd.conf')
 
-
 # Define some specific errors that can be thrown and caught
 class UnrecognizedCommand(Exception): pass
 class NotEnoughCoinsError(Exception): pass
@@ -132,6 +131,16 @@ class AddressNotInWallet(Exception): pass
 class BlockchainNotReady(Exception): pass
 class InvalidTransaction(Exception): pass
 class IncompleteTransaction(Exception): pass
+
+# By default, set the Armory DB IP:Port to the defaults in ArmoryUtils, which
+# can use the options parser to set custom IPs & ports. Override this if
+# ArmoryDB uses a cookie file.
+if os.path.exists(os.path.join(ARMORY_HOME_DIR, '.cookie_')):
+   with open(os.path.join(ARMORY_HOME_DIR, '.cookie_')) as cookiePtr:
+      # Use enumerate() to avoid loading the cookie into memory.
+      for c, cLine in enumerate(cookiePtr):
+         if c == 1:
+            ARMORYDB_PORT = cLine
 
 # A dictionary that includes the names of all functions an armoryd user can
 # call from the armoryd server. Implemented on the server side so that a client
@@ -3127,7 +3136,8 @@ class Armory_Daemon(object):
       else:
          # Make sure we're actually able to do something before proceeding.
          if Cpp.BlockDataManagerConfig_testConnection(\
-               ARMORYDB_IP, armoryengine.ArmoryUtils.ARMORYDB_PORT):
+               ARMORYDB_IP, ARMORYDB_PORT):
+            print 'Found ArmoryDB instance at %s:%s' % (ARMORYDB_IP, ARMORYDB_PORT)
             self.lock = threading.Lock()
             self.lastChecked = None
 
@@ -3251,7 +3261,7 @@ class Armory_Daemon(object):
             reactor.callLater(3, self.Heartbeat)
          else:
             errStr = 'could not find instance of armorydb at %s:%s' \
-               % (ARMORYDB_IP, armoryengine.ArmoryUtils.ARMORYDB_PORT)
+               % (ARMORYDB_IP, ARMORYDB_PORT)
                      
             LOGERROR(errStr)
             os._exit(0)
@@ -3395,14 +3405,14 @@ class Armory_Daemon(object):
          return
 
       try:
-         TheBDM.instantiateBDV(armoryengine.ArmoryUtils.ARMORYDB_PORT)         
+         TheBDM.instantiateBDV(ARMORYDB_PORT)
          TheBDM.registerBDV()
          self.walletManager = Cpp.WalletManager(str(ARMORY_HOME_DIR))
          self.walletManager.setBDVObject(TheBDM.bdv())
       except:
          TheBDM.setState(BDM_OFFLINE)
          return
-      
+
       self.loadCppWallets()
 
       for wltId in self.WltMap:
@@ -3412,7 +3422,7 @@ class Armory_Daemon(object):
       for lbID in self.lboxMap:
          lbObj = self.lboxMap[lbID]
          LOGWARN('Registering lockbox: %s' % lbID)
-         
+
          scraddrReg = script_to_scrAddr(lbObj.binScript)
          scraddrP2SH = script_to_scrAddr(script_to_p2sh_script(lbObj.binScript))
          scrAddrList = []
@@ -3420,10 +3430,11 @@ class Armory_Daemon(object):
          scrAddrList.append(scraddrP2SH)
 
          self.lboxCppWalletMap[lbID] = lbObj.registerLockbox(scrAddrList, False)
-         
+
       if len(self.lboxMap) > 0:
          LOGINFO("registered %d lockboxes" % len(self.lboxMap))
-      
+
+
    #############################################################################
    def start(self):
       #run a wallet consistency check before starting the BDM
