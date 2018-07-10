@@ -96,6 +96,7 @@ import decimal
 from inspect import *
 import json
 import sys
+from bitcoinrpc_jsonrpc import ServiceProxy
 
 from twisted.cred.checkers import FilePasswordDB
 from twisted.internet import reactor
